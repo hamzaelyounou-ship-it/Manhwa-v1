@@ -1,22 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
-import { createParser, ParsedEvent, ReconnectInterval } from "eventsource-parser";
+import { createParser } from "eventsource-parser";
 import "./index.css";
 
-/**
- * Clean SPA with four views now: HOME, SETUP (tabs), LOADING, GAME.
- */
-
-type View = "HOME" | "SETUP" | "LOADING" | "GAME";
-type Mode = "do" | "say" | "think" | "story" | "continue" | "erase";
-type Line = { text: string; who: "user" | "ai" };
-
-export default function App(): JSX.Element {
-  const [view, setView] = useState<View>("HOME");
+// Views and modes are now plain strings — no TypeScript types
+export default function App() {
+  const [view, setView] = useState("HOME");
 
   // Smooth transitions
   const [fade, setFade] = useState("fade-in");
 
-  const applyView = (v: View) => {
+  const applyView = (v) => {
     setFade("fade-out");
     setTimeout(() => {
       setView(v);
@@ -25,7 +18,7 @@ export default function App(): JSX.Element {
   };
 
   // Setup state (tabs)
-  const [activeSetupTab, setActiveSetupTab] = useState<"PLOT" | "RULES" | "APPEARANCE">("PLOT");
+  const [activeSetupTab, setActiveSetupTab] = useState("PLOT");
   const [plotTitle, setPlotTitle] = useState("");
   const [plotSummary, setPlotSummary] = useState("");
   const [openingScene, setOpeningScene] = useState("");
@@ -34,17 +27,20 @@ export default function App(): JSX.Element {
   const [bgAccent, setBgAccent] = useState("#0f1724");
 
   // Game state
-  const [lines, setLines] = useState<Line[]>([
+  const [lines, setLines] = useState([
     { text: "Welcome — start a scenario or create a custom world.", who: "ai" },
   ]);
-  const [mode, setMode] = useState<Mode>("story");
+  const [mode, setMode] = useState("story");
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const storyRef = useRef<HTMLDivElement | null>(null);
-  const controllerRef = useRef<AbortController | null>(null);
+
+  const storyRef = useRef(null);
+  const controllerRef = useRef(null);
 
   useEffect(() => {
-    if (storyRef.current) storyRef.current.scrollTop = storyRef.current.scrollHeight;
+    if (storyRef.current) {
+      storyRef.current.scrollTop = storyRef.current.scrollHeight;
+    }
   }, [lines, streaming]);
 
   // Sample scenarios
@@ -69,9 +65,10 @@ export default function App(): JSX.Element {
     },
   ];
 
-  function startSetupFromScenario(id: string) {
+  function startSetupFromScenario(id) {
     const s = SCENARIOS.find((x) => x.id === id);
     if (!s) return;
+
     if (id === "custom") {
       setPlotTitle("");
       setPlotSummary("");
@@ -81,53 +78,60 @@ export default function App(): JSX.Element {
       setPlotSummary(s.worldSummary || "");
       setOpeningScene(s.desc || "");
     }
+
     setActiveSetupTab("PLOT");
     applyView("SETUP");
   }
 
-  /** ⭐ NEW — START GAME WITH LOADING SCREEN */
+  // ⭐ LOADING SCREEN
   function startGameWithLoading() {
     applyView("LOADING");
 
     setTimeout(() => {
-      startGameFromSetup(); // existing
+      startGameFromSetup();
     }, 1800);
   }
 
   function startGameFromSetup() {
-    const initial: Line[] = [];
+    const initial = [];
+
     if (plotTitle) initial.push({ text: `World — ${plotTitle}`, who: "ai" });
     if (plotSummary) initial.push({ text: plotSummary, who: "ai" });
     if (openingScene) initial.push({ text: openingScene, who: "ai" });
     if (initial.length === 0) initial.push({ text: "A new tale begins.", who: "ai" });
+
     setLines(initial);
     applyView("GAME");
   }
 
-  function appendLine(text: string, who: Line["who"] = "ai") {
+  function appendLine(text, who = "ai") {
     setLines((prev) => [...prev, { text, who }]);
   }
 
-  async function sendMessage(modeOverride?: Mode) {
+  async function sendMessage(modeOverride) {
     const m = modeOverride ?? mode;
 
     if (m === "erase") {
       setLines((prev) => {
         const c = [...prev];
+
         for (let i = c.length - 1; i >= 0; i--) {
           if (c[i].who === "ai") {
             c.splice(i, 1);
             break;
           }
         }
+
         for (let i = c.length - 1; i >= 0; i--) {
           if (c[i].who === "user") {
             c.splice(i, 1);
             break;
           }
         }
+
         return c;
       });
+
       return;
     }
 
@@ -145,8 +149,10 @@ export default function App(): JSX.Element {
         : "Continue";
 
     if (m !== "continue") appendLine(userText, "user");
+
     setInput("");
     setStreaming(true);
+
     controllerRef.current = new AbortController();
 
     try {
@@ -172,7 +178,7 @@ export default function App(): JSX.Element {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
 
-      const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
+      const parser = createParser((event) => {
         if (event.type === "event") {
           if (event.data === "[DONE]") return;
           try {
@@ -186,14 +192,16 @@ export default function App(): JSX.Element {
       });
 
       let finished = false;
+
       while (!finished) {
         const { value, done } = await reader.read();
         finished = done;
+
         if (value) {
           parser.feed(decoder.decode(value, { stream: true }));
         }
       }
-    } catch (err: any) {
+    } catch (err) {
       if (err?.name === "AbortError") appendLine("(stream aborted)", "ai");
       else appendLine(`(network error) ${err?.message ?? String(err)}`, "ai");
     } finally {
@@ -205,6 +213,7 @@ export default function App(): JSX.Element {
   function undo() {
     setLines((prev) => prev.slice(0, Math.max(0, prev.length - 2)));
   }
+
   function redo() {}
 
   return (
@@ -225,7 +234,7 @@ export default function App(): JSX.Element {
 
       <main className="main-container">
 
-        {/* ⭐ NEW — LOADING SCREEN */}
+        {/* LOADING SCREEN */}
         {view === "LOADING" && (
           <div className="loading-page">
             <div className="dots-loader"></div>
